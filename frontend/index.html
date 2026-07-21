@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Agriculture Digital Twin</title>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <header class="dashboard-header">
+            <h1>🌾 Smart Agriculture Digital Twin</h1>
+            <div class="header-status">
+                <span class="status-indicator" id="status-dot"></span>
+                <span id="system-status-text">System Online</span>
+            </div>
+        </header>
+
+        <main class="dashboard-grid">
+            <!-- Real-Time Gauges -->
+            <section class="panel gauges-panel">
+                <h2>Real-Time Telemetry</h2>
+                <div class="gauges-grid">
+                    <div class="gauge-card">
+                        <div class="gauge-icon temp-icon">🌡️</div>
+                        <div class="gauge-value" id="val-temp">--°C</div>
+                        <div class="gauge-label">Temperature</div>
+                    </div>
+                    <div class="gauge-card">
+                        <div class="gauge-icon hum-icon">💧</div>
+                        <div class="gauge-value" id="val-hum">--%</div>
+                        <div class="gauge-label">Humidity</div>
+                    </div>
+                    <div class="gauge-card">
+                        <div class="gauge-icon soil-icon">🌱</div>
+                        <div class="gauge-value" id="val-soil">--%</div>
+                        <div class="gauge-label">Soil Moisture</div>
+                    </div>
+                    <div class="gauge-card">
+                        <div class="gauge-icon lux-icon">☀️</div>
+                        <div class="gauge-value" id="val-lux">-- lx</div>
+                        <div class="gauge-label" style="margin-bottom: 5px;">Luminosity</div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary); display: flex; gap: 8px;">
+                            <span>PPFD: <strong id="val-ppfd" style="color:var(--text-primary);">--</strong></span>
+                            <span>Rad: <strong id="val-rad" style="color:var(--text-primary);">--</strong></span>
+                        </div>
+                    </div>
+                    <div class="gauge-card">
+                        <div class="gauge-icon npk-icon">🧪</div>
+                        <div class="gauge-value npk-value">
+                            <span id="val-npk-n">N: --</span>
+                            <span id="val-npk-p">P: --</span>
+                            <span id="val-npk-k">K: --</span>
+                        </div>
+                        <div class="gauge-label">NPK Levels</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Manual Nutrient Entry -->
+            <section class="panel nutrient-panel">
+                <h2>Manual Nutrient Log</h2>
+                <form id="npk-form" class="npk-form">
+                    <div class="input-group">
+                        <label for="input-n">Nitrogen (N)</label>
+                        <input type="number" id="input-n" required step="any" placeholder="e.g. 50">
+                    </div>
+                    <div class="input-group">
+                        <label for="input-p">Phosphorus (P)</label>
+                        <input type="number" id="input-p" required step="any" placeholder="e.g. 25">
+                    </div>
+                    <div class="input-group">
+                        <label for="input-k">Potassium (K)</label>
+                        <input type="number" id="input-k" required step="any" placeholder="e.g. 40">
+                    </div>
+                    <button type="submit" class="submit-btn">Submit Update</button>
+                </form>
+            </section>
+
+            <!-- Live Actuator (Motor Status) -->
+            <section class="panel actuator-panel">
+                <h2>Live Actuator Status</h2>
+                <div class="actuator-content">
+                    <div class="motor-indicator">
+                        <div class="led-ring" id="motor-led"></div>
+                        <span id="motor-status-text">OFF</span>
+                    </div>
+                    <div class="motor-stats">
+                        <div class="stat-box">
+                            <span class="stat-label">Target Moisture</span>
+                            <span class="stat-val" id="target-threshold" style="color: var(--accent-warning);">--%</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Current Runtime</span>
+                            <span class="stat-val" id="current-runtime">00:00</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Total Today</span>
+                            <span class="stat-val" id="total-runtime">0m</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Water Dispensed</span>
+                            <span class="stat-val" id="total-water">0g</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Est. Dry Biomass</span>
+                            <span class="stat-val" id="est-biomass">0g</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 24-Hour Weather Forecast -->
+            <section class="panel weather-panel">
+                <h2>24-Hour Diurnal Forecast</h2>
+                <div class="weather-scroller" id="hourly-forecast-container">
+                    <p>Loading weather predictions...</p>
+                </div>
+            </section>
+
+            <!-- Alerts & Control -->
+            <section class="panel alerts-panel">
+                <h2>System Alerts & Control Log</h2>
+                <div class="alerts-container" id="alerts-log">
+                    <!-- Alerts will be injected here -->
+                    <div class="alert-item info">System initialized. Awaiting data...</div>
+                </div>
+            </section>
+
+            <!-- Charts -->
+            <section class="panel charts-panel">
+                <div class="charts-header">
+                    <h2>Historical Trends</h2>
+                    <button class="info-btn" id="et-info-btn">ℹ️ ET Intelligence</button>
+                </div>
+                <div class="charts-container">
+                    <div class="chart-wrapper">
+                        <canvas id="envChart"></canvas>
+                    </div>
+                    <div class="chart-wrapper">
+                        <canvas id="soilChart"></canvas>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- ET Math Explainer Modal -->
+    <div id="et-modal" class="modal">
+        <div class="modal-content panel">
+            <span class="close-btn" id="close-modal">&times;</span>
+            <h2>Digital Twin Intelligence</h2>
+            <p class="modal-subtitle">Evapotranspiration (ET) Calculation</p>
+            
+            <div class="math-explainer">
+                <p>The system uses the Penman-Monteith heuristic to estimate how fast the soil dries:</p>
+                <div class="formula">
+                    <strong>ET<sub>c</sub> = K<sub>c</sub> &times; ET<sub>0</sub></strong>
+                </div>
+                
+                <div class="live-math" id="live-math-content">
+                    <p>Loading intelligence data...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/charts.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
