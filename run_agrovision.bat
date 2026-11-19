@@ -1,9 +1,9 @@
 @echo off
-title Agrovision Digital Twin Launcher
+title Agrovision Hardware IoT Launcher
 color 0A
 
 echo =========================================
-echo   Starting Agrovision Digital Twin...
+echo   Starting Agrovision Hardware System...
 echo =========================================
 
 :: Change to the directory where this script is located

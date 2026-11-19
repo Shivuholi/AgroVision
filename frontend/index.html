@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Agriculture Digital Twin</title>
+    <title>Smart Sustainable Irrigation System</title>
     <!-- Google Fonts -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
     <!-- Chart.js -->
@@ -13,7 +13,7 @@
 <body>
     <div class="dashboard-container">
         <header class="dashboard-header">
-            <h1>🌾 Smart Agriculture Digital Twin</h1>
+            <h1>🌾 Smart Sustainable Irrigation System</h1>
             <div class="header-status">
                 <span class="status-indicator" id="status-dot"></span>
                 <span id="system-status-text">System Online</span>
@@ -58,6 +58,17 @@
                         </div>
                         <div class="gauge-label">NPK Levels</div>
                     </div>
+                    <div class="gauge-card water-card" id="card-water-need" style="cursor: pointer;" title="Click to view W_now formula breakdown">
+                        <div class="gauge-icon" style="color: var(--accent-blue);">🌧️</div>
+                        <div class="gauge-value" id="val-water-need" style="color: var(--accent-blue);">--%</div>
+                        <div class="gauge-label" style="margin-bottom: 5px;">Water Need (W<sub>now</sub>)</div>
+                        <div style="font-size: 0.75rem; color: var(--text-secondary); display: flex; flex-direction: column; gap: 6px;">
+                            <span id="val-water-status" style="color: var(--accent-blue); font-weight: 600;">Calculating...</span>
+                            <div class="water-progress-track">
+                                <div class="water-progress-bar" id="water-progress-bar" style="width: 0%;"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -87,12 +98,24 @@
                 <div class="actuator-content">
                     <div class="motor-indicator">
                         <div class="led-ring" id="motor-led"></div>
-                        <span id="motor-status-text">OFF</span>
+                        <div style="display: flex; flex-direction: column;">
+                            <span id="motor-status-text">OFF</span>
+                            <span id="motor-peripheral-badge" style="font-size: 0.72rem; color: var(--text-secondary); letter-spacing: 0.5px; font-weight: 600; text-transform: uppercase;">PERIPHERAL: LOW</span>
+                        </div>
                     </div>
                     <div class="motor-stats">
-                        <div class="stat-box">
+                        <div class="stat-box" id="card-target-threshold" style="cursor: pointer;" title="Click to view Dynamic Threshold formula">
                             <span class="stat-label">Target Moisture</span>
                             <span class="stat-val" id="target-threshold" style="color: var(--accent-warning);">--%</span>
+                            <span style="font-size: 0.68rem; color: var(--text-secondary); margin-top: 2px;">Dynamic (PPFD) ↗</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Water Need %</span>
+                            <span class="stat-val" id="stat-water-pct" style="color: var(--accent-blue);">--%</span>
+                        </div>
+                        <div class="stat-box">
+                            <span class="stat-label">Cycle State</span>
+                            <span class="stat-val" id="stat-hold-state" style="color: var(--text-secondary); font-size: 0.95rem;">STANDBY</span>
                         </div>
                         <div class="stat-box">
                             <span class="stat-label">Current Runtime</span>
@@ -135,7 +158,11 @@
             <section class="panel charts-panel">
                 <div class="charts-header">
                     <h2>Historical Trends</h2>
-                    <button class="info-btn" id="et-info-btn">ℹ️ ET Intelligence</button>
+                    <div style="display: flex; gap: 8px;">
+                        <button class="info-btn" id="thresh-info-btn">☀️ Threshold Math</button>
+                        <button class="info-btn" id="water-info-btn">🌧️ W<sub>now</sub> Math</button>
+                        <button class="info-btn" id="et-info-btn">ℹ️ ET Intelligence</button>
+                    </div>
                 </div>
                 <div class="charts-container">
                     <div class="chart-wrapper">
@@ -153,8 +180,8 @@
     <div id="et-modal" class="modal">
         <div class="modal-content panel">
             <span class="close-btn" id="close-modal">&times;</span>
-            <h2>Digital Twin Intelligence</h2>
-            <p class="modal-subtitle">Evapotranspiration (ET) Calculation</p>
+            <h2>Evapotranspiration Intelligence</h2>
+            <p class="modal-subtitle">Penman-Monteith Evapotranspiration (ET) Model</p>
             
             <div class="math-explainer">
                 <p>The system uses the Penman-Monteith heuristic to estimate how fast the soil dries:</p>
@@ -164,6 +191,44 @@
                 
                 <div class="live-math" id="live-math-content">
                     <p>Loading intelligence data...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- W_now Math Explainer Modal -->
+    <div id="water-modal" class="modal">
+        <div class="modal-content panel" style="max-width: 580px;">
+            <span class="close-btn" id="close-water-modal">&times;</span>
+            <h2>Predictive Irrigation Intelligence</h2>
+            <p class="modal-subtitle">Rain Forecast Offset & Plant Stress Formula (W<sub>now</sub>)</p>
+            
+            <div class="math-explainer">
+                <p>Calculates the percentage of water to give right now if rain is predicted on irrigation day:</p>
+                <div class="formula" style="font-size: 1.05rem; overflow-x: auto;">
+                    <strong>W<sub>now</sub> = W<sub>need</sub> &times; (1 - P<sub>rain</sub> &times; C<sub>rain</sub>) &times; M<sub>stress</sub></strong>
+                </div>
+                
+                <div class="live-math" id="live-water-math-content">
+                    <p>Loading predictive water intelligence...</p>
+                </div>
+            </div>
+        </div>
+    <!-- Dynamic Threshold Math Explainer Modal -->
+    <div id="thresh-modal" class="modal">
+        <div class="modal-content panel" style="max-width: 580px;">
+            <span class="close-btn" id="close-thresh-modal">&times;</span>
+            <h2>Dynamic Light-Stress Threshold</h2>
+            <p class="modal-subtitle">Continuous PPFD Radiation Adaptation Equation</p>
+            
+            <div class="math-explainer">
+                <p>The target soil moisture shifts dynamically based on measured Photosynthetic Photon Flux Density (PPFD):</p>
+                <div class="formula" style="font-size: 1.05rem; overflow-x: auto; color: var(--accent-warning);">
+                    <strong>Target Threshold = 30% + (PPFD / 1000 &times; 22%) &nbsp; [Bounded: 30% – 52%]</strong>
+                </div>
+                
+                <div class="live-math" id="live-thresh-math-content">
+                    <p>Loading dynamic threshold intelligence...</p>
                 </div>
             </div>
         </div>

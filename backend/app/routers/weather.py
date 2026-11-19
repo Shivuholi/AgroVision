@@ -1,33 +1,64 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 import random
+import time
+from datetime import datetime, timedelta
+import math
+
+from ..database import get_db
+from .. import models
+from ..services.prediction import (
+    calculate_evapotranspiration,
+    predict_moisture_drop,
+    calculate_dynamic_threshold,
+    calculate_predictive_water_need
+)
 
 router = APIRouter(
     prefix="/api/weather",
     tags=["weather"],
 )
 
+_cached_weather = {
+    "timestamp": 0,
+    "data": None
+}
+
 @router.get("/forecast")
 def get_weather_forecast():
-    # Mocked weather forecast since no API key is provided
+    now = time.time()
+    # Cache forecast for 60 seconds to keep readings stable during active demo
+    if _cached_weather["data"] is not None and (now - _cached_weather["timestamp"] < 60):
+        return {
+            "status": "success",
+            "data": _cached_weather["data"]
+        }
+        
+    is_rainy = random.random() > 0.65
+    p_rain = round(random.uniform(0.65, 0.90), 2) if is_rainy else round(random.uniform(0.05, 0.25), 2)
+    hours_to_rain = round(random.uniform(2.0, 5.5), 1) if is_rainy else round(random.uniform(14.0, 22.0), 1)
+    
+    weather_data = {
+        "temperature_c": round(random.uniform(24.0, 32.0), 1),
+        "humidity_percent": round(random.uniform(55.0, 85.0) if is_rainy else random.uniform(40.0, 65.0), 1),
+        "wind_speed_ms": round(random.uniform(1.2, 4.5), 1),
+        "solar_radiation_wm2": round(random.uniform(150.0, 400.0) if is_rainy else random.uniform(450.0, 780.0), 1),
+        "condition": "Rainy" if is_rainy else "Sunny",
+        "rain_probability": p_rain,
+        "hours_until_rain": hours_to_rain
+    }
+    
+    _cached_weather["timestamp"] = now
+    _cached_weather["data"] = weather_data
+    
     return {
         "status": "success",
-        "data": {
-            "temperature_c": random.uniform(20.0, 35.0),
-            "humidity_percent": random.uniform(40.0, 80.0),
-            "wind_speed_ms": random.uniform(1.0, 5.0),
-            "solar_radiation_wm2": random.uniform(200.0, 800.0), # Needed for ET calculation
-            "condition": "Rainy" if random.random() > 0.7 else "Sunny"
-        }
+        "data": weather_data
     }
-
-from datetime import datetime, timedelta
-import math
 
 @router.get("/hourly")
 def get_hourly_forecast():
-    # Generate 24 hours of smart mock data simulating a diurnal cycle
     now = datetime.now()
-    # Let's say peak temp is at 14:00 (2 PM) and lowest is at 02:00 (2 AM)
     base_temp = 25.0
     amplitude = 10.0
     
@@ -36,18 +67,22 @@ def get_hourly_forecast():
         target_time = now + timedelta(hours=i)
         hour = target_time.hour
         
-        # Sine wave: shift by 8 hours so minimum is at 2 AM
-        # formula: temp = base + amp * sin((hour - 8) / 24 * 2pi)
+        # Sine wave for temp
         temp = base_temp + amplitude * math.sin((hour - 8) / 24 * 2 * math.pi)
         
-        # Determine condition and icon
+        # Diurnal condition & rain probability
         is_day = 6 <= hour <= 18
-        if is_day:
-            condition = "Sunny" if random.random() > 0.3 else "Cloudy"
+        
+        # Rain chance wave: higher afternoon/evening
+        rain_prob = max(5, int(40 + 35 * math.sin((hour - 12) / 24 * 2 * math.pi)))
+        if rain_prob > 60:
+            condition = "Rain Showers" if is_day else "Rainy Night"
+        elif is_day:
+            condition = "Sunny" if rain_prob < 25 else "Cloudy"
         else:
-            condition = "Clear Night" if random.random() > 0.3 else "Cloudy Night"
+            condition = "Clear Night" if rain_prob < 25 else "Cloudy Night"
             
-        humidity = max(30.0, 100.0 - (temp * 1.5)) + random.uniform(-5, 5)
+        humidity = max(30.0, 100.0 - (temp * 1.5)) + random.uniform(-3, 3)
         
         forecast.append({
             "timestamp": target_time.isoformat(),
@@ -55,6 +90,7 @@ def get_hourly_forecast():
             "temperature_c": round(temp, 1),
             "humidity_percent": round(humidity, 1),
             "condition": condition,
+            "rain_probability": rain_prob,
             "is_day": is_day
         })
         
@@ -62,8 +98,6 @@ def get_hourly_forecast():
         "status": "success",
         "data": forecast
     }
-
-from ..services.prediction import calculate_evapotranspiration, predict_moisture_drop
 
 @router.get("/et_intelligence")
 def get_et_intelligence():
@@ -80,3 +114,34 @@ def get_et_intelligence():
         "weather": weather,
         "et_breakdown": et_data
     }
+
+@router.get("/water_recommendation")
+def get_water_recommendation(device_id: str = "ESP32_01", db: Session = Depends(get_db)):
+    weather = get_weather_forecast()["data"]
+    
+    # Query latest telemetry
+    latest_data = db.query(models.SensorData).filter(
+        models.SensorData.device_id == device_id
+    ).order_by(models.SensorData.timestamp.desc()).first()
+    
+    soil_moisture = latest_data.soil_moisture if latest_data else 32.0
+    ppfd = latest_data.ppfd if latest_data else 15.0
+    dynamic_threshold = calculate_dynamic_threshold(ppfd)
+    
+    p_rain = weather.get("rain_probability", 0.70 if "Rain" in weather.get("condition", "") else 0.15)
+    hours_to_rain = weather.get("hours_until_rain", 4.0 if "Rain" in weather.get("condition", "") else 20.0)
+    
+    water_calc = calculate_predictive_water_need(
+        w_need=100.0,
+        p_rain=p_rain,
+        hours_until_rain=hours_to_rain,
+        soil_moisture=soil_moisture,
+        target_threshold=dynamic_threshold
+    )
+    
+    return {
+        "status": "success",
+        "data": water_calc,
+        "weather": weather
+    }
+

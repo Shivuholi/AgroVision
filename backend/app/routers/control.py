@@ -34,7 +34,8 @@ def create_command(cmd: schemas.ControlCommandCreate, db: Session = Depends(get_
 
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import func
-from ..services.prediction import calculate_dynamic_threshold
+from ..services.prediction import calculate_dynamic_threshold, calculate_predictive_water_need
+from .weather import get_weather_forecast
 
 @router.get("/runtime")
 def get_motor_runtime(device_id: str, db: Session = Depends(get_db)):
@@ -71,8 +72,59 @@ def get_motor_runtime(device_id: str, db: Session = Depends(get_db)):
     # Get latest PPFD for dynamic threshold
     latest_data = db.query(models.SensorData).filter(models.SensorData.device_id == device_id).order_by(models.SensorData.timestamp.desc()).first()
     dynamic_threshold = 30.0 # Default fallback
+    soil_moisture = 32.0
     if latest_data:
         dynamic_threshold = calculate_dynamic_threshold(latest_data.ppfd)
+        soil_moisture = latest_data.soil_moisture
+
+    # Calculate Predictive Water Need (W_now formula)
+    weather = get_weather_forecast()["data"]
+    p_rain = weather.get("rain_probability", 0.70 if "Rain" in weather.get("condition", "") else 0.15)
+    hours_to_rain = weather.get("hours_until_rain", 4.0 if "Rain" in weather.get("condition", "") else 20.0)
+
+    water_calc = calculate_predictive_water_need(
+        w_need=100.0,
+        p_rain=p_rain,
+        hours_until_rain=hours_to_rain,
+        soil_moisture=soil_moisture,
+        target_threshold=dynamic_threshold
+    )
+
+    # Safety: Auto-cleanup stale running logs if motor has been running > 25 seconds
+    if is_on and current_runtime_seconds > 25:
+        open_motor = db.query(models.MotorLog).filter(
+            models.MotorLog.device_id == device_id,
+            models.MotorLog.status == "ON",
+            models.MotorLog.end_time == None
+        ).first()
+        if open_motor:
+            open_motor.end_time = datetime.now(timezone.utc)
+            db.commit()
+            is_on = False
+            current_runtime_seconds = 0
+
+    # Calculate Soak Cooldown Remaining
+    COOLDOWN_SOAK_SECONDS = 60
+    cooldown_remaining_seconds = 0
+
+    last_finished_motor = db.query(models.MotorLog).filter(
+        models.MotorLog.device_id == device_id,
+        models.MotorLog.status == "ON",
+        models.MotorLog.end_time != None
+    ).order_by(models.MotorLog.end_time.desc()).first()
+
+    if last_finished_motor and last_finished_motor.end_time and not is_on:
+        end_time_utc = last_finished_motor.end_time.replace(tzinfo=timezone.utc) if last_finished_motor.end_time.tzinfo is None else last_finished_motor.end_time
+        time_since_off = (datetime.now(timezone.utc) - end_time_utc).total_seconds()
+        if time_since_off < COOLDOWN_SOAK_SECONDS:
+            cooldown_remaining_seconds = int(COOLDOWN_SOAK_SECONDS - time_since_off)
+
+    if is_on:
+        state_status = "RUNNING"
+    elif cooldown_remaining_seconds > 0:
+        state_status = f"SOAK HOLD ({cooldown_remaining_seconds}s)"
+    else:
+        state_status = "STANDBY"
 
     return {
         "is_on": is_on,
@@ -80,6 +132,10 @@ def get_motor_runtime(device_id: str, db: Session = Depends(get_db)):
         "total_runtime_today_seconds": int(total_seconds_today),
         "total_water_pumped_grams": int(total_water_pumped_grams),
         "estimated_biomass_grams": int(estimated_biomass_grams),
-        "dynamic_threshold": float(dynamic_threshold)
+        "dynamic_threshold": float(dynamic_threshold),
+        "water_need": water_calc,
+        "cooldown_remaining_seconds": cooldown_remaining_seconds,
+        "state_status": state_status
     }
+
 

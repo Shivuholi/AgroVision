@@ -18,9 +18,22 @@ def simulate_esp32():
         temp += random.uniform(-0.5, 0.5)
         hum += random.uniform(-1.0, 1.0)
         
-        # Soil moisture drops slowly, but drops faster if temp is high
-        soil_drop = 0.5 if temp > 30 else 0.2
-        soil -= random.uniform(soil_drop - 0.1, soil_drop + 0.2)
+        # Check if pump is running to simulate realistic soil hydration
+        is_pumping = False
+        try:
+            runtime_resp = httpx.get(f"http://localhost:8000/api/control/runtime?device_id={DEVICE_ID}", timeout=1.5)
+            if runtime_resp.status_code == 200:
+                is_pumping = runtime_resp.json().get("is_on", False)
+        except Exception:
+            is_pumping = False
+
+        if is_pumping:
+            soil += random.uniform(3.0, 4.5)
+            print(f"[WATERING ACTIVE] Pump is ON! Soil moisture rising: {soil:.1f}%")
+        else:
+            # Soil moisture drops slowly when pump is idle
+            soil_drop = 0.35 if temp > 30 else 0.15
+            soil -= random.uniform(soil_drop - 0.05, soil_drop + 0.1)
         
         # Ensure bounds
         temp = max(10, min(temp, 45))

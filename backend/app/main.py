@@ -10,7 +10,7 @@ from .services.control_loop import run_control_loop
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Smart Agriculture Digital Twin API")
+app = FastAPI(title="Smart Agriculture IoT Irrigation API")
 
 # Configure CORS for frontend access
 app.add_middleware(
