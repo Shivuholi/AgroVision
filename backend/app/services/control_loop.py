@@ -10,6 +10,7 @@ from .prediction import (
     calculate_predictive_water_need
 )
 from ..routers.weather import get_weather_forecast
+from .mqtt_service import publish_command
 
 # The threshold is now dynamic based on Light Stress (PPFD)
 
@@ -109,6 +110,7 @@ async def run_control_loop():
                                 message=f"Irrigation Completed: Runtime {int(run_duration)}s (Moisture {latest_data.soil_moisture:.1f}%). Entering {COOLDOWN_SOAK_SECONDS}s Soak Period."
                             ))
                             db.commit()
+                            publish_command(latest_data.device_id, "PUMP_OFF")
                             print(f"Scheduled PUMP_OFF for {latest_data.device_id} (Runtime: {int(run_duration)}s). Entering Soak Period.")
                     
                     db.close()
@@ -199,6 +201,7 @@ async def run_control_loop():
                         message=f"Automated Irrigation Started: Moisture {latest_data.soil_moisture:.1f}% < Target {dynamic_threshold:.1f}% (Demand: {water_pct}%)"
                     ))
                     db.commit()
+                    publish_command(latest_data.device_id, "PUMP_ON", duration=15)
                     print(f"Scheduled PUMP_ON for {latest_data.device_id} due to low moisture: {latest_data.soil_moisture:.2f}%")
                         
             db.close()

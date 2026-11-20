@@ -4,6 +4,7 @@ from typing import List
 
 from .. import models, schemas
 from ..database import get_db
+from ..services.mqtt_service import publish_command
 
 router = APIRouter(
     prefix="/api/control",
@@ -30,6 +31,10 @@ def create_command(cmd: schemas.ControlCommandCreate, db: Session = Depends(get_
     db.add(db_cmd)
     db.commit()
     db.refresh(db_cmd)
+    try:
+        publish_command(cmd.device_id, cmd.command_type)
+    except Exception as e:
+        print(f"[WARN] Failed to push MQTT command: {e}")
     return db_cmd
 
 from datetime import datetime, timezone, timedelta

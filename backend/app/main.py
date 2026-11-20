@@ -6,6 +6,7 @@ from . import models
 from .database import engine
 from .routers import sensors, control, weather
 from .services.control_loop import run_control_loop
+from .services.mqtt_service import start_mqtt_service, stop_mqtt_service
 
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
@@ -15,7 +16,7 @@ app = FastAPI(title="Smart Agriculture IoT Irrigation API")
 # Configure CORS for frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, replace with frontend domain
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -27,9 +28,18 @@ app.include_router(weather.router)
 
 @app.on_event("startup")
 async def startup_event():
-    # Start the control loop background task
+    # 1. Start the real-time MQTT bridge service (<50ms latency)
+    start_mqtt_service()
+    # 2. Start the periodic control loop background task
     asyncio.create_task(run_control_loop())
+
+@app.on_event("shutdown")
+def shutdown_event():
+    stop_mqtt_service()
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to the Smart Agriculture API"}
+    return {
+        "status": "online",
+        "message": "Welcome to the Smart Agriculture API (Real-Time MQTT & HTTP Enabled)"
+    }
