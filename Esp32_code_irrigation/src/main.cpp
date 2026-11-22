@@ -295,6 +295,14 @@ void loop() {
     float temp = dht.readTemperature();
     float hum  = dht.readHumidity();
     float soil = readSoilMoisturePercent();
+    
+    // Auto-retry BH1750 detection if not ready
+    if (!bh1750Ready) {
+      if (lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE)) {
+        bh1750Ready = true;
+        Serial.println("[OK] BH1750 Light Sensor connected successfully.");
+      }
+    }
     float lux  = bh1750Ready ? lightMeter.readLightLevel() : 0.0f;
 
     if (isnan(temp) || isnan(hum)) {

@@ -115,6 +115,7 @@ def on_message(client, userdata, msg):
                     # 2. Compute Biological Soft-Sensors & Dynamic Threshold
                     ppfd = lux * 0.0185
                     dynamic_threshold = calculate_dynamic_threshold(ppfd)
+                    print(f"[MQTT RX] Node {device_id} | Soil: {soil:.1f}% | Temp: {temp:.1f}C | Hum: {hum:.1f}% | Lux: {lux:.0f} lx (PPFD: {ppfd:.1f} umol/m2/s, Target: {dynamic_threshold:.1f}%)")
 
                     # 3. Compute Predictive Water Need (W_now)
                     weather = get_weather_forecast()["data"]
