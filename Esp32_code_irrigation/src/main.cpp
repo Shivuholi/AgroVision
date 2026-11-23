@@ -4,6 +4,7 @@
 #include <Wire.h>
 #include <BH1750.h>
 #include <DHT.h>
+#include <esp_timer.h>
 
 // ==========================================
 // 1. PIN & HARDWARE CONFIGURATION
@@ -68,6 +69,22 @@ unsigned long configuredPumpMaxMs = MAX_PUMP_RUN_MS;
 unsigned long lastTelemetryTime = 0;
 unsigned long lastReconnectAttempt = 0;
 
+// ========================================================
+// HARDWARE TIMER INTERRUPT (SILICON-LEVEL AUTONOMOUS CUTOFF)
+// ========================================================
+esp_timer_handle_t pumpTimerHandle = NULL;
+volatile bool hwTimerCutoffFired = false;
+
+// Hardware Timer ISR Callback — Executes in high-priority Timer Task / ISR context
+void IRAM_ATTR onPumpHardwareTimerTimeout(void* arg) {
+  // Direct silicon-level pin shutdown (< 1 microsecond):
+  digitalWrite(ONBOARD_LED, LOW);
+  if (ENABLE_RELAY) digitalWrite(RELAY_PIN, RELAY_OFF);
+  
+  isPumpRunning = false;
+  hwTimerCutoffFired = true;
+}
+
 // ==========================================
 // 6. ACTUATOR CONTROL & SAFETY CUTOFF
 // ==========================================
@@ -83,8 +100,19 @@ void setPumpState(bool state, const char* reason, unsigned long maxDurationSec =
     digitalWrite(ONBOARD_LED, HIGH);
     if (ENABLE_RELAY) digitalWrite(RELAY_PIN, RELAY_ON);
 
-    Serial.printf("\n[ACTUATOR] >>> PUMP ON (Max %lu ms) | Reason: %s <<<\n", configuredPumpMaxMs, reason);
+    // ARM HARDWARE TIMER: Silicon-level countdown in microseconds
+    if (pumpTimerHandle != NULL) {
+      esp_timer_stop(pumpTimerHandle); // cleanly disarm any previous running timer
+      esp_timer_start_once(pumpTimerHandle, (uint64_t)configuredPumpMaxMs * 1000ULL);
+    }
+
+    Serial.printf("\n[ACTUATOR] >>> PUMP ON (HW Timer Armed: %lu ms) | Reason: %s <<<\n", configuredPumpMaxMs, reason);
   } else {
+    // DISARM HARDWARE TIMER
+    if (pumpTimerHandle != NULL) {
+      esp_timer_stop(pumpTimerHandle);
+    }
+
     isPumpRunning = false;
     pumpStartTime = 0;
 
@@ -216,6 +244,16 @@ void setup() {
   pinMode(ONBOARD_LED, OUTPUT);
   digitalWrite(ONBOARD_LED, LOW);
 
+  // 1.5. Initialize Silicon-Level Hardware Timer for Actuator Protection
+  const esp_timer_create_args_t pumpTimerArgs = {
+    .callback = &onPumpHardwareTimerTimeout,
+    .arg = NULL,
+    .dispatch_method = ESP_TIMER_TASK,
+    .name = "pump_hw_timer"
+  };
+  esp_timer_create(&pumpTimerArgs, &pumpTimerHandle);
+  Serial.println("[OK] Silicon-level Hardware Safety Timer initialized.");
+
   // 2. Initialize Sensors
   Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN);
   if (lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE)) {
@@ -278,7 +316,16 @@ void loop() {
   }
 
   // B. AUTONOMOUS HARDWARE SAFETY CUTOFF
-  // Checked on every single loop iteration — no dependence on server or timer!
+  // Check if Hardware Timer ISR fired in the background
+  if (hwTimerCutoffFired) {
+    hwTimerCutoffFired = false;
+    Serial.println("\n[CRITICAL HW INTERRUPT] >>> HARDWARE TIMER ISR EXPIRED! Relay killed at silicon level. <<<");
+    if (mqttClient.connected()) {
+      mqttClient.publish(TOPIC_STATUS, "ERR_HW_TIMER_CUTOFF");
+    }
+  }
+
+  // Polling fallback check
   if (isPumpRunning) {
     unsigned long elapsed = millis() - pumpStartTime;
     if (elapsed >= configuredPumpMaxMs) {
